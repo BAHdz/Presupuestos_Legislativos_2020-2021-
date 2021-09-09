@@ -1,0 +1,386 @@
+---
+title: "Presupuestos comparativos y su nivel de transparencia"
+subtitle: "Periodo 2020-2021"
+author: "Bruno Tomás Atonal Hernández"
+output: word_document
+---
+
+
+```{r library, include=FALSE}
+
+library(XLConnect)
+library(tidyverse)
+library(kableExtra)
+library(ggalt)
+library(ggrepel)
+library(scales)
+library(knitr)
+```
+
+El ejercicio fiscal 2020-2021 para los presupuestos legislativos se caracterizó por contener discrepancias menores entre las partidas aprobadas y devengadas a comparación de otros años, tanto por el número de congresos estatales con discrepancias por encima del Índice de Transparencia, como por los montos calculados en millones de pesos. 
+
+De acuerdo con el Instituto Mexicano para la Competitividad (2021), cada año los presupuestos asignados para los congresos estatales han mostrado una tendencia decreciente en términos brutos en los últimos 5 años, por lo que cada año se les aprueba una partida presupuestal menor, y el presupuesto devengado varía a partir de la aprobación inicial. Sin embargo, esta asignación de fondos no incide necesariamente en los costos incurridos de cada congreso ni a la proporción que alcanza en función del número de diputados del que se compone. 
+
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+```
+
+
+
+```{r data, include=FALSE}
+
+presp <- loadWorkbook("informe2021.xlsx")
+
+getSheets(presp)
+
+presp_2021 <- readWorksheet(presp,
+                            sheet = 1,
+                            startRow = 1,
+                            endRow = 34)
+
+
+```
+
+Para entender detenidamente la situación de cada congreso, se tomaron dos partidas presupuestales:
+
+- Presupuestos aprobados: Provienen de los Presupuestos Legislativos, una parte se asigna a los congresos y el resto se utiliza para auditorías estatales.
+- Presupuestos devengados: Presupuestos contemplados por cada congreso estatal para cubrir obligaciones contraídas por cada periodo electoral, principalmente en el número de diputados.
+
+
+```{r rename, include=FALSE}
+
+names(presp_2021) <- c("entidad",
+                       "presp_apr",
+                       "var_dev_apr",
+                       "gasto_psnl",
+                       "porcent",
+                       "no_dip")
+
+```
+
+A su vez, las diferencias entre presupuestos devengados y aprobados se analizaron desde dos perspectivas: bruta o en millones de pesos, porcentual o neta. Esto con la finalidad de calcular el desempeño fiscal de cada congreso y sus excedentes en términos de transparencia.
+
+```{r calculate, include=FALSE}
+
+presp_2021 <- presp_2021 %>%
+  mutate(pres_dev = presp_apr * 
+           (1 + var_dev_apr)) %>%
+  mutate(variacion = pres_dev - presp_apr) %>%
+  mutate(presp_dip = presp_apr / no_dip,
+         cto_dip = pres_dev / no_dip) %>%
+  mutate(presp_apr = 
+           round(presp_apr / 1000000, 0),
+         pres_dev = 
+           round(pres_dev / 1000000, 0),
+         variacion = 
+           round(variacion / 1000000, 0),
+        presp_dip = 
+            round(presp_dip / 1000000, 0),
+        cto_dip = 
+            round(cto_dip / 1000000, 0))
+
+```
+
+
+
+```{r table_1, echo=FALSE}
+
+presp_2021 %>%
+  select(entidad, presp_apr, pres_dev#, no_dip, presp_dip, cto_dip
+         ) %>%
+  kable(format.args = list(big.mark = ","),
+        format = "pipe", col.names = c(
+          "Entidad", "Presupuesto Aprobado","Presupuesto Devengado"#, 
+#          "Número de Diputados", "Presupuesto por Diputado", 
+#          "Costo por Diputado"
+        ), 
+        caption = "Presupuestos legislativos por entidad 
+        federativa en millones de pesos", align = "ccc") %>%
+  add_footnote("Fuente: Elaboración propia con datos del 
+               Instituto Mexicano para la Competitividad (2021).")
+
+```
+
+Para el caso de Oaxaca no se contó con cifras de utilidad para el análisis presente, por lo que es el único congreso que no forma parte de los siguientes análisis.
+
+```{r p_agr_tr, echo=FALSE, include=FALSE}
+
+p_agr <- presp_2021 %>%
+    gather(key = "presupuesto", 
+           value = "cantidad",
+           presp_apr, pres_dev, -var_dev_apr) %>%
+    filter(entidad %in% c("Ciudad de México", 
+                          "Estado de México", "Puebla",
+                          "Sonora", "Michoacán", "Veracruz",
+                          "Jalisco", "Guanajuato",
+                          "Baja California", "Guerrero", 
+                          "Chihuahua")) %>%
+    mutate(entidad = fct_reorder(
+      entidad, cantidad, last)) %>%
+    select(entidad, presupuesto, cantidad) %>%
+    group_by(entidad) %>%
+    arrange(desc(cantidad)) %>%
+    mutate_if(is.character,
+              str_replace_all, 
+              pattern = "presp_apr",
+              replacement = "Aprobado") %>%
+    mutate_if(is.character,
+              str_replace_all,
+              pattern = "pres_dev",
+              replacement = "Devengado")
+
+```
+
+
+
+```{r flrtd, echo=FALSE}
+
+fltrd <- presp_2021 %>%
+  select(entidad, presp_apr, pres_dev) %>%
+  filter(entidad %in% c("Ciudad de México", 
+                        "Estado de México", "Puebla",
+                        "Sonora", "Michoacán", "Veracruz",
+                        "Jalisco", "Guanajuato",
+                        "Baja California", "Guerrero", "Chihuahua")) %>%
+  mutate(entidad = fct_reorder(
+    entidad, pres_dev, last)) %>%
+  arrange(desc(pres_dev))
+
+```
+
+
+```{r plt_1, fig.height=5, fig.width=7}
+
+fltrd %>%
+  ggplot(aes(y = entidad)) +
+  geom_point(data = p_agr, 
+             aes(x = cantidad, color = presupuesto),
+             size = 2.5) +
+  geom_dumbbell(
+    aes(x = presp_apr,
+        xend = pres_dev),
+    colour ="#e3e2e1",
+    colour_x = "#a3c4dc",
+    colour_xend = "#0e668b",
+    size = 3,
+    dot_guide = TRUE,
+    dot_guide_size = 0.12,
+    dot_guide_colour = "grey60"
+  ) + 
+  theme_minimal() + 
+  theme(panel.grid.minor = element_blank(),
+        panel.grid.major = element_blank(),
+        plot.title = element_text(size = 15),
+        plot.subtitle = element_text(size = 12),
+        legend.position = c(0.8, 0.2),
+        axis.text.x  = element_blank(),
+        aspect.ratio = 0.75) +
+  scale_color_manual(name = "", 
+                     values = c("darkgreen", "darkred")) +
+  geom_text(color = "darkgreen", size = 2.5,
+            nudge_y = 0.35,
+            aes(x = presp_apr,
+                label = presp_apr)) +
+  geom_text(color = "darkred", size = 2.5,
+            nudge_y = -0.35,
+            aes(x = pres_dev,
+                label = pres_dev)) + 
+  labs(
+    x = "",
+    y = "",
+    title = "Comparación de presupuestos en millones de pesos",
+    subtitle = "Presupuestos legislativos para el periodo 2020-2021 ",
+    caption = "Fuente: Elaboración propia con datos del Instituto Mexicano para la Competitividad (2021)."
+  )
+
+```
+
+A primera instancia destacan entidades como Ciudad de México y Jalisco por la gran diferencia entre sus presupuestos. Otras entidades tuvieron diferencias poco visibles como Veracruz, otras no tuvieron diferencia alguna o es a duras penas perceptible como en el caso de Michoacán. Esto denota la gestión irregular de fondos de cada congreso, lo que evidencia la falta de vigilancia por parte de organismos reguladores a nivel federal, así como de la ciudadanía mexicana.
+
+Puebla no destaca por tener presupuestos elevados a comparación de los primeros 10 estados en esta gráfica, y tampoco tiene una diferencia entre sus presupuestos tan elevada como otros estados, por lo que su discrepancia no destaca en la gráfica.
+
+```{r plt_3, fig.width=7.5, fig.height=3.5}
+
+presp_2021 %>%
+  mutate(entidad = fct_reorder(
+           entidad, variacion, last)) %>%
+  arrange(desc(variacion)) %>%
+  filter(variacion > 0) %>%
+  select(entidad, variacion) %>%
+  ggplot(aes(x = entidad, y = variacion)) +
+  geom_col(fill = "darkred") +
+  coord_flip() +
+  geom_text(aes(label = variacion,
+            y = variacion + 3.5),
+            position = position_dodge(0.9),
+            vjust = 0.5) +
+  theme_minimal() +
+  theme(panel.grid = element_blank(),
+        axis.text.x = element_blank()) +
+  labs(title = "Variación positiva bruta entre presupuestos devengados y aprobados",
+       subtitle = "Presupuestos Legislativos para el periodo 2020-2021 en millones de pesos",
+       x = "",
+       y = "",
+       caption = "Fuente: Elaboración propia con datos del Instituto Mexicano Promotor del Bien Común (2021)."
+       )
+
+```
+
+Ciudad de México desembolsó 124 millones de pesos más del presupuesto que se le aprobó inicialmente, le sigue Sonora con 72 millones y Durango con 58. Esto significa que 16 congresos estatales devengaron más dinero del que se les aprobó, por lo que cuentan con un déficit superior a un millón de pesos para el periodo correspondiente.
+
+```{r plt_4, fig.width=7.5,fig.height=3.5}
+
+presp_2021 %>%
+  mutate(entidad = fct_reorder(
+           entidad, variacion, last)) %>%
+  arrange(desc(variacion)) %>%
+  filter(variacion < 0) %>%
+  select(entidad, variacion) %>%
+  ggplot(aes(x = entidad, y = variacion)) +
+  geom_col(fill = "darkgreen") +
+  coord_flip() +
+  geom_text(aes(label = variacion,
+            y = variacion - 4.3),
+            position = position_dodge(0.9),
+            vjust = 0.5) +
+  theme_minimal() +
+  theme(panel.grid = element_blank(),
+        axis.text.x = element_blank()) +
+  labs(title = "Variación negativa bruta entre presupuestos devengados y aprobados",
+       subtitle = "Presupuestos Legislativos para el periodo 2020-2021 en millones de pesos",
+       x = "",
+       y = "",
+       caption = "Fuente: Elaboración propia con datos del Instituto Mexicano Promotor del Bien Común (2021)."
+       )
+
+```
+
+Jalisco no devengó 147 millones de pesos de su presupuesto aprobado, le siguen Chihuahua con 73 millones, Estado de México con 49, Querétaro y Puebla con 16 millones respectivamente, por lo que 12 congresos consiguieron un superávit mayor a un millón de pesos para el periodo 2020-2021. Solo 4 congresos no tuvieron un déficit o un superávit mayor o menor a un millón de pesos.
+
+Puebla es el séptimo estado con mejor desempeño fiscal y el séptimo en no rebasar su presupuesto aprobado, por lo que, en términos brutos, no incurrió en un déficit para el periodo correspondiente.
+
+
+```{r plt_percent, fig.width=7.5,fig.height=6.5}
+
+presp_2021 %>%
+  mutate(
+    var_dev_apr = round(var_dev_apr * 100, 0)) %>%
+  mutate(
+    cero = var_dev_apr < 0, 
+         entidad = fct_reorder(
+    entidad, var_dev_apr, last)) %>%
+  arrange(var_dev_apr) %>%
+  filter(var_dev_apr <= -0.05 | var_dev_apr >= 0.05) %>%
+  ggplot(aes(x = entidad, 
+             y = var_dev_apr, 
+             color = cero)) +
+  geom_lollipop(
+    point.size = 2.5,
+    horizontal = FALSE) +
+  geom_text(nudge_x =  0.5,
+            size = 3,
+            color = "gray50",
+            aes(y = var_dev_apr,
+                label = var_dev_apr)
+            ) +
+  coord_flip() + 
+  theme_minimal() +
+  theme(panel.grid = element_blank(),
+        axis.text.x = element_blank(),
+#        aspect.ratio = 0.67,
+        legend.position = "none"
+        ) +
+  labs(
+    x = "",
+    y = "",
+    title = "Variación porcentual entre presupuestos devengados y aprobados",
+    subtitle = "Presupuestos Legislativos para el periodo 2020-2021",
+    caption = "Fuente: Elaboración propia con datos del Instituto Mexicano para la Competitividad (2021)."
+  )
+
+```
+
+En términos porcentuales, el congreso de Durango presenta la diferencia positiva más grande con 23%, seguido de Coahuila con 22% y Aguascalientes con 13%. Las entidades en rojo tuvieron un déficit en términos porcentuales entre sus presupuestos devengados y aprobados. Por otro lado, Jalisco tuvo la variación negativa más grande con -16%, seguido de Chihuahua con -13%, Nuevo León y Puebla con -5% respectivamente. Los congresos en azul claro tuvieron un superávit en términos porcentuales entre sus presupuestos devengados y aprobados. De acuerdo con los datos presentados, el congreso de Puebla es el cuarto congreso con mejor desempeño fiscal en términos porcentuales para el periodo 2020-2021.
+
+
+## Presupuestos y costo por diputado
+
+A pesar de que cada congreso recibe presupuesto en función de la extensión territorial, la población y el ingreso promedio de cada entidad federativa (IMCO, 2021), el presupuesto asignado incide de formas distintas en cada congreso a partir del número de diputados que lo compone. 
+
+Hay dos indicadores importantes para entender el costo-beneficio de la composición de cada congreso, estos son:
+
+- Presupuesto por diputado: el presupuesto aprobado entre el número de diputatos.
+- Costo por diputado: el presupuesto devengado entre el número de diputados.
+
+De esta forma podemos entender más a detalle los déficits y superávits calculados anteriormente en función del número de diputados.
+
+```{r plt_5,fig.height=4, fig.width=7}
+
+tabs2 <- presp_2021 %>%
+  select(entidad, presp_dip, cto_dip, no_dip) %>%
+  mutate(sup_per = presp_dip - cto_dip) %>%
+  mutate(entidad = fct_reorder(
+    entidad, sup_per, last
+  )) %>%
+  arrange(desc(sup_per)) #%>%
+#  filter(sup_per <= -1 | sup_per >= 1) 
+tabs2 %>%
+  kable(format.args = list(big.mark = ","),
+        format = "pipe", col.names = c(
+          "Entidad", "Presupuesto por diputado",
+          "Costo por diputado", "Número de diputados",
+          "Saldo por diputado"
+        ), 
+        caption = "Costo-Beneficio por diputado en millones de pesos", 
+        align = "ccccc") %>%
+  add_footnote("Fuente: Elaboración propia con datos del 
+               Instituto Mexicano para la Competitividad (2021).")
+
+```
+
+El congreso de Jalisco es el que encabeza el saldo a favor por diputado con 4 millones, le siguen Chihuahua con 2 millones, Colima, Estado de México y otros con un millón respectivamente, lo que da un total de 7 congresos con un saldo a favor. Por otra parte, hay 13 congresos que incurren en saldos en contra, los que presentan más pérdidas por diputado son Sonora, Nayarit, Durango, Coahuila y Ciudad de México con dos millones respectivamente. Hay 13 congresos que no presentan saldos superiores o inferiores a un millón de pesos, entre los que se encuentra el congreso de Puebla.
+
+### Comparación de Puebla en términos generales
+
+A pesar de que Puebla se encuentra en el séptimo lugar de variación bruta negativa (- 11 mdp.) y en el cuarto lugar en variación porcentual negativa (- 5%), entendido como un desempeño fiscal positivo en ambas partes, no se visibilizan esos resultados en un saldo a favor en el costo por diputado, por lo que sus resultados positivos son marginales cuando se examina a detalle el costo-beneficio por diputado. 
+
+## Índice de Transparencia
+
+De acuerdo con el Instituto Mexicano para la Competitvidad citando a la ONU (2020), para que una aplicación de gasto público se considere "transparente" o sin aparentes signos de corrupción, debe tener una variación mayor que o menor que 15%, es decir, el monto final debe ser mayor a un 15% negativo o menor que un 15% positivo para que se considere transparente su aplicación.
+
+
+```{r tab_2, echo=FALSE}
+
+tabs3 <- presp_2021 %>%
+  select(entidad, var_dev_apr, variacion) %>%   
+  filter(var_dev_apr <= -0.15 | var_dev_apr >= 0.15) %>%
+  mutate(exc_porc = if_else(var_dev_apr > 0.15, 
+                             var_dev_apr - 0.15, 
+                             var_dev_apr + 0.15),
+         exceso = round(
+    (variacion * var_dev_apr) * exc_porc, 1)) %>%
+#  add_row(entidad = "Puebla", var_dev_apr = -0.05, 
+#          variacion = -11, exc_porc = 0, exceso = 0) %>%
+  arrange(desc(exc_porc))%>%
+  mutate(var_dev_apr = percent(var_dev_apr),
+         exc_porc = percent(exc_porc))
+tabs3 %>%
+kable(format = "pipe", col.names = 
+        c("Entidad", 
+          "Variación porcentual original",
+          "Variación bruta", "Exceso porcentual", "Excedente positivo o negativo"),
+      align = "ccccc", 
+      caption = "Excedentes y déficits presupuestales en millones de pesos") %>% 
+  add_footnote("Fuente: Elaboración propia con datos del Instituto Mexicano para la Competitividad (2021)."
+               )
+
+```
+
+Tres congresos rebasaron el Índice de Transparencia para el periodo presente: Durango, Coahuila y Jalisco, con un excedente de 2 millones de pesos en términos absolutos. Puebla no figura en esta categoría, por lo que puede afirmarse que el congreso se apega a la Transparencia establecida para instituciones públicas.
+
+## Observaciones
+
+- La reducción de presupuestos hacia los congresos los mantiene apegados al cumplimiento del Índice de Transparencia debido a la escesez de recursos. 
+- La reducción por sí sola no garantiza un saldo a favor en términos brutos o porcentuales para ningún congreso.
+- Un buen desempeño fiscal bruto y porcentual no significa que se optimice el costo-beneficio por diputado de manera significativa, tal y como ocurre en el caso de Puebla.
